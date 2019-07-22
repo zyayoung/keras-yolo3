@@ -84,9 +84,17 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
     new_image.paste(image, (dx, dy))
     image = new_image
 
-    # flip image or not
-    flip = rand()<.5
-    if flip: image = image.transpose(Image.FLIP_LEFT_RIGHT)
+    # flipv image or not
+    flipv = rand()<.5
+    if flipv: image = image.transpose(Image.FLIP_LEFT_RIGHT)
+
+    # fliph image or not
+    fliph = rand()<.5
+    if fliph: image = image.transpose(Image.FLIP_TOP_BOTTOM)
+
+    # flipt image or not
+    flipt = rand()<.5
+    if flipt: image = image.transpose(Image.TRANSPOSE)
 
     # distort image
     hue = rand(-hue, hue)
@@ -108,7 +116,9 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
         np.random.shuffle(box)
         box[:, [0,2]] = box[:, [0,2]]*nw/iw + dx
         box[:, [1,3]] = box[:, [1,3]]*nh/ih + dy
-        if flip: box[:, [0,2]] = w - box[:, [2,0]]
+        if flipv: box[:, [0,2]] = w - box[:, [2,0]]
+        if fliph: box[:, [1,3]] = h - box[:, [3,1]]
+        if flipt: box[:, :] = h - box[:, [1,0,3,2]]
         box[:, 0:2][box[:, 0:2]<0] = 0
         box[:, 2][box[:, 2]>w] = w
         box[:, 3][box[:, 3]>h] = h
