@@ -2,7 +2,7 @@
 
 from functools import reduce
 
-from PIL import Image
+from PIL import Image, ImageEnhance
 import numpy as np
 from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
 
@@ -84,6 +84,23 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
     new_image.paste(image, (dx, dy))
     image = new_image
 
+    # Enhance
+    bright = rand()<.75
+    if bright: 
+        factor = np.exp(np.random.normal(0, 0.25))
+        image = ImageEnhance.Brightness(image).enhance(factor)
+    
+    contrast = rand()<.75
+    if contrast:
+        factor = np.exp(np.random.normal(0, 0.25))
+        image = ImageEnhance.Contrast(image).enhance(factor)
+    
+    sharp = rand()<.75
+    
+    if sharp: 
+        factor = np.exp(np.random.normal(0, 0.25))
+        image = ImageEnhance.Sharpness(image).enhance(factor)
+
     # flipv image or not
     flipv = rand()<.5
     if flipv: image = image.transpose(Image.FLIP_LEFT_RIGHT)
@@ -118,7 +135,7 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
         box[:, [1,3]] = box[:, [1,3]]*nh/ih + dy
         if flipv: box[:, [0,2]] = w - box[:, [2,0]]
         if fliph: box[:, [1,3]] = h - box[:, [3,1]]
-        if flipt: box[:, :] = h - box[:, [1,0,3,2]]
+        if flipt: box[:, :] = h - box[:, [1,0,3,2,4]]
         box[:, 0:2][box[:, 0:2]<0] = 0
         box[:, 2][box[:, 2]>w] = w
         box[:, 3][box[:, 3]>h] = h
