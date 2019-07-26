@@ -4,14 +4,18 @@ from collections import defaultdict
 name_box_id = defaultdict(list)
 id_name = dict()
 f = open(
-    "mscoco2017/annotations/instances_train2017.json",
+    "good-1.json",
     encoding='utf-8')
 data = json.load(f)
+images={}
+for d in data['images']:
+    images[d['id']]=d['file_name']
 
+print(images)
 annotations = data['annotations']
 for ant in annotations:
     id = ant['image_id']
-    name = 'mscoco2017/train2017/%012d.jpg' % id
+    name = 'data/'+images[id]
     cat = ant['category_id']
 
     if cat >= 1 and cat <= 11:

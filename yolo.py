@@ -6,6 +6,7 @@ Class definition of YOLO_v3 style detection model on image and video
 import colorsys
 import os
 from timeit import default_timer as timer
+import tensorflow as tf
 
 import numpy as np
 from keras import backend as K
@@ -13,19 +14,22 @@ from keras.models import load_model
 from keras.layers import Input
 from PIL import Image, ImageFont, ImageDraw
 
-from yolo3.model import yolo_eval, yolo_body, tiny_yolo_body
+from yolo3.model import yolo_eval, yolo_body, tiny_yolo_body, box_iou
 from yolo3.utils import letterbox_image
 import os
 from keras.utils import multi_gpu_model
+
+from munkres import Munkres
+m = Munkres()
 
 class YOLO(object):
     _defaults = {
         "model_path": 'model_data/yolo.h5',
         "anchors_path": 'anchors.txt',
         "classes_path": 'classes.txt',
-        "score" : 0.3,
+        "score" : 0.1,
         "iou" : 0.45,
-        "model_image_size" : (416, 416),
+        "model_image_size" : (608, 608),
         "gpu_num" : 1,
     }
 
@@ -43,6 +47,11 @@ class YOLO(object):
         self.anchors = self._get_anchors()
         self.sess = K.get_session()
         self.boxes, self.scores, self.classes = self.generate()
+        self.prev_bbox = None
+        self.connections = []
+        self.instances = []
+        self.instance_count = 0
+        # print(self.boxes[0])
 
     def _get_class(self):
         classes_path = os.path.expanduser(self.classes_path)
@@ -57,6 +66,29 @@ class YOLO(object):
             anchors = f.readline()
         anchors = [float(x) for x in anchors.split(',')]
         return np.array(anchors).reshape(-1, 2)
+
+    @staticmethod
+    def bbox_overlaps_py(boxes, query_boxes):
+        """
+        determine overlaps between boxes and query_boxes
+        :param boxes: n * 4 bounding boxes
+        :param query_boxes: k * 4 bounding boxes
+        :return: overlaps: n * k overlaps
+        """
+        n_ = boxes.shape[0]
+        k_ = query_boxes.shape[0]
+        overlaps = np.zeros((n_, k_), dtype=np.float)
+        for k in range(k_):
+            query_box_area = (query_boxes[k, 2] - query_boxes[k, 0] + 1) * (query_boxes[k, 3] - query_boxes[k, 1] + 1)
+            for n in range(n_):
+                iw = min(boxes[n, 2], query_boxes[k, 2]) - max(boxes[n, 0], query_boxes[k, 0]) + 1
+                if iw > 0:
+                    ih = min(boxes[n, 3], query_boxes[k, 3]) - max(boxes[n, 1], query_boxes[k, 1]) + 1
+                    if ih > 0:
+                        box_area = (boxes[n, 2] - boxes[n, 0] + 1) * (boxes[n, 3] - boxes[n, 1] + 1)
+                        all_area = float(box_area + query_box_area - iw * ih)
+                        overlaps[n, k] = iw * ih / all_area
+        return overlaps
 
     def generate(self):
         model_path = os.path.expanduser(self.model_path)
@@ -80,8 +112,8 @@ class YOLO(object):
         print('{} model, anchors, and classes loaded.'.format(model_path))
 
         # Generate colors for drawing bounding boxes.
-        hsv_tuples = [(x / len(self.class_names), 1., 1.)
-                      for x in range(len(self.class_names))]
+        hsv_tuples = [(x / 1000, 1., 1.)
+                      for x in range(1000)]
         self.colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
         self.colors = list(
             map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)),
@@ -96,7 +128,7 @@ class YOLO(object):
             self.yolo_model = multi_gpu_model(self.yolo_model, gpus=self.gpu_num)
         boxes, scores, classes = yolo_eval(self.yolo_model.output, self.anchors,
                 len(self.class_names), self.input_image_shape,
-                score_threshold=self.score, iou_threshold=self.iou)
+                score_threshold=self.score, iou_threshold=self.iou, nms=True)
         return boxes, scores, classes
 
     def detect_image(self, image):
@@ -126,14 +158,42 @@ class YOLO(object):
 
         print('Found {} boxes for {}'.format(len(out_boxes), 'img'))
 
-        font = ImageFont.truetype(font='font/FiraMono-Medium.otf',
-                    size=np.floor(3e-2 * image.size[1] + 0.5).astype('int32'))
-        thickness = (image.size[0] + image.size[1]) // 300
+        out_ids = {}
+        
+        connection = {}
+        if self.prev_bbox is not None:
+            matrix = self.bbox_overlaps_py(self.prev_bbox, out_boxes) + out_scores.T
+            matrix = 1/(np.asarray(matrix)+1e-6)
+            h, w = matrix.shape
+            _matrix = np.ones((max(h,w), max(h,w)))*1e6
+            _matrix[:h, :w] = matrix.copy()
+            # print(_matrix)
+            indexes = m.compute(_matrix)
+            total = 0
+            for row, column in indexes:
+                if row >= h or column >= w or matrix[row][column]>1e5:
+                    continue
+                value = matrix[row][column]
+                total += value
+                print(f'{row} -> {column} | {value}')
+                connection[row] = column
+                if self.instances and row in self.instances[-1].keys():
+                    out_ids[column] = self.instances[-1][row]
+            print(f'total cost: {total}')
+        self.prev_bbox = out_boxes.copy()
 
-        for i, c in reversed(list(enumerate(out_classes))):
+        font = ImageFont.truetype(font='font/FiraMono-Medium.otf',
+                    size=np.floor(1e-2 * image.size[1] + 0.5).astype('int32'))
+        thickness = (image.size[0] + image.size[1]) // 1000
+
+        for i, c in list(enumerate(out_classes)):
             predicted_class = self.class_names[c]
             box = out_boxes[i]
             score = out_scores[i]
+            if i not in out_ids.keys():
+                out_ids[i] = self.instance_count
+                self.instance_count += 1
+            ins_id = out_ids[i]
 
             label = '{} {:.2f}'.format(predicted_class, score)
             draw = ImageDraw.Draw(image)
@@ -155,13 +215,15 @@ class YOLO(object):
             for i in range(thickness):
                 draw.rectangle(
                     [left + i, top + i, right - i, bottom - i],
-                    outline=self.colors[c])
+                    outline=self.colors[ins_id])
             draw.rectangle(
                 [tuple(text_origin), tuple(text_origin + label_size)],
-                fill=self.colors[c])
+                fill=self.colors[ins_id])
             draw.text(text_origin, label, fill=(0, 0, 0), font=font)
             del draw
 
+        self.connections.append(connection)
+        self.instances.append(out_ids)
         end = timer()
         print(end - start)
         return image
@@ -186,10 +248,21 @@ def detect_video(yolo, video_path, output_path=""):
     curr_fps = 0
     fps = "FPS: ??"
     prev_time = timer()
+
+    channal_diff = np.int32(video_fps)
+    history = {}
+    prev_bbox = None
+    sess = tf.Session()
     while True:
         return_value, frame = vid.read()
         if not return_value:
             break
+        # history.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+        # if len(history)>=channal_diff+1:
+        #     frame[:,:,1] = history[-channal_diff-1]
+        # if len(history)>=channal_diff*2+1:
+        #     frame[:,:,2] = history[-channal_diff*2-1]
+        #     history.pop(0)
         image = Image.fromarray(frame)
         image = yolo.detect_image(image)
         result = np.asarray(image)

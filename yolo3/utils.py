@@ -6,6 +6,8 @@ from PIL import Image, ImageEnhance
 import numpy as np
 from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
 
+import time
+
 def compose(*funcs):
     """Compose arbitrarily many functions, evaluated left to right.
 
@@ -33,7 +35,7 @@ def letterbox_image(image, size):
 def rand(a=0, b=1):
     return np.random.rand()*(b-a) + a
 
-def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jitter=.3, hue=.1, sat=1.5, val=1.5, proc_img=True):
+def get_random_data(annotation_line, input_shape, random=True, max_boxes=50, jitter=.3, hue=.1, sat=1.5, val=1.5, proc_img=True):
     '''random preprocessing for real-time data augmentation'''
     line = annotation_line.split()
     image = Image.open(line[0])
@@ -85,17 +87,17 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
     image = new_image
 
     # Enhance
-    bright = rand()<.75
+    bright = rand()<.5
     if bright: 
         factor = np.exp(np.random.normal(0, 0.25))
         image = ImageEnhance.Brightness(image).enhance(factor)
     
-    contrast = rand()<.75
+    contrast = rand()<.5
     if contrast:
         factor = np.exp(np.random.normal(0, 0.25))
         image = ImageEnhance.Contrast(image).enhance(factor)
     
-    sharp = rand()<.75
+    sharp = rand()<.5
     
     if sharp: 
         factor = np.exp(np.random.normal(0, 0.25))
@@ -114,18 +116,20 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
     if flipt: image = image.transpose(Image.TRANSPOSE)
 
     # distort image
-    hue = rand(-hue, hue)
-    sat = rand(1, sat) if rand()<.5 else 1/rand(1, sat)
-    val = rand(1, val) if rand()<.5 else 1/rand(1, val)
-    x = rgb_to_hsv(np.array(image)/255.)
-    x[..., 0] += hue
-    x[..., 0][x[..., 0]>1] -= 1
-    x[..., 0][x[..., 0]<0] += 1
-    x[..., 1] *= sat
-    x[..., 2] *= val
-    x[x>1] = 1
-    x[x<0] = 0
-    image_data = hsv_to_rgb(x) # numpy array, 0 to 1
+    # hue = rand(-hue, hue)
+    # sat = rand(1, sat) if rand()<.5 else 1/rand(1, sat)
+    # val = rand(1, val) if rand()<.5 else 1/rand(1, val)
+    # x = rgb_to_hsv(np.array(image)/255.)
+    # x[..., 0] += hue
+    # x[..., 0][x[..., 0]>1] -= 1
+    # x[..., 0][x[..., 0]<0] += 1
+    # x[..., 1] *= sat
+    # x[..., 2] *= val
+    # x[x>1] = 1
+    # x[x<0] = 0
+    # image_data = hsv_to_rgb(x) # numpy array, 0 to 1
+
+    image_data = np.array(image) / 255.
 
     # correct boxes
     box_data = np.zeros((max_boxes,5))
@@ -144,5 +148,4 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
         box = box[np.logical_and(box_w>1, box_h>1)] # discard invalid box
         if len(box)>max_boxes: box = box[:max_boxes]
         box_data[:len(box)] = box
-
     return image_data, box_data

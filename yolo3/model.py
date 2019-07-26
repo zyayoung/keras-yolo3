@@ -188,9 +188,10 @@ def yolo_eval(yolo_outputs,
               anchors,
               num_classes,
               image_shape,
-              max_boxes=20,
+              max_boxes=50,
               score_threshold=.6,
-              iou_threshold=.5):
+              iou_threshold=.5,
+              nms=False):
     """Evaluate YOLO model on given input and return filtered boxes."""
     num_layers = len(yolo_outputs)
     anchor_mask = [[6,7,8], [3,4,5], [0,1,2]] if num_layers==3 else [[3,4,5], [1,2,3]] # default setting
@@ -214,10 +215,11 @@ def yolo_eval(yolo_outputs,
         # TODO: use keras backend instead of tf.
         class_boxes = tf.boolean_mask(boxes, mask[:, c])
         class_box_scores = tf.boolean_mask(box_scores[:, c], mask[:, c])
-        nms_index = tf.image.non_max_suppression(
-            class_boxes, class_box_scores, max_boxes_tensor, iou_threshold=iou_threshold)
-        class_boxes = K.gather(class_boxes, nms_index)
-        class_box_scores = K.gather(class_box_scores, nms_index)
+        if nms:
+            nms_index = tf.image.non_max_suppression(
+                class_boxes, class_box_scores, max_boxes_tensor, iou_threshold=iou_threshold)
+            class_boxes = K.gather(class_boxes, nms_index)
+            class_box_scores = K.gather(class_box_scores, nms_index)
         classes = K.ones_like(class_box_scores, 'int32') * c
         boxes_.append(class_boxes)
         scores_.append(class_box_scores)
