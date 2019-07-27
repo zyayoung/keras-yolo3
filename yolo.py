@@ -65,7 +65,7 @@ class YOLO(object):
         "anchors_path": 'anchors.txt',
         "classes_path": 'classes.txt',
         "score" : 0.1,
-        "iou" : 0.3,
+        "iou" : 0.45,
         "model_image_size" : (608, 608),
         "gpu_num" : 1,
     }
@@ -256,7 +256,7 @@ class YOLO(object):
             print(f'total cost: {total}')
 
             for index, box in enumerate(self.prev_bbox):
-                if not prev_mask[index] and self.prev_bbox_frame_cnt[index] > 5:
+                if not prev_mask[index] and self.prev_bbox_frame_cnt[index] > 7:
                     out_boxes = np.concatenate([out_boxes, [box+self.prev_velocity[index]]], axis=0)
                     frame_cnt = np.concatenate([frame_cnt, [self.prev_bbox_frame_cnt[index]]], axis=0)
                     out_classes = np.concatenate([out_classes, [0]], axis=0)
@@ -268,7 +268,7 @@ class YOLO(object):
             keep = (out_ids > 0)
             iou = self.bbox_overlap(out_boxes[drop], out_boxes[keep]).max(axis=1)
             nms_keep = nms(out_boxes[drop], out_scores[drop], 0.3)
-            keep[np.where(drop)[0][(iou==0) & nms_keep]] = True
+            keep[np.where(drop)[0][(iou<0.2) & nms_keep]] = True
             out_boxes = out_boxes[keep]
             frame_cnt = frame_cnt[keep]
             out_classes = out_classes[keep]
