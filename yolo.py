@@ -381,11 +381,12 @@ def detect_video(yolo, video_path, output_path=""):
             curr_fps = 0
         cv2.putText(result, text=fps, org=(3, 15), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=0.50, color=(255, 0, 0), thickness=2)
-        cv2.namedWindow("result", cv2.WINDOW_NORMAL)
-        cv2.imshow("result", result)
         if isOutput:
             out.write(result)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-           break
+        else:
+            cv2.namedWindow("result", cv2.WINDOW_NORMAL)
+            cv2.imshow("result", result)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
     yolo.close_session()
 
