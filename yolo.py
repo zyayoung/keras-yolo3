@@ -251,7 +251,7 @@ class YOLO(object):
                     out_ids[column] = self.instances[-1][row]
                     out_velocity[column] = out_boxes[column] - self.prev_bbox[row]
                     out_velocity[column] = 0.1 * out_velocity[column] + 0.9 * self.prev_velocity[row]
-                    out_boxes[column] = self.prev_bbox[row] + out_velocity[column]
+                    out_boxes[column] = 0.5*out_boxes[column] + 0.5*(self.prev_bbox[row] + out_velocity[column])
                     frame_cnt[column] = self.prev_bbox_frame_cnt[row] + 1
             print(f'total cost: {total}')
 
