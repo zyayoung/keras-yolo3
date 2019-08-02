@@ -64,7 +64,7 @@ class YOLO(object):
         "model_path": 'model_data/yolo.h5',
         "anchors_path": 'anchors.txt',
         "classes_path": 'classes.txt',
-        "score" : 0.1,
+        "score" : 0.01,
         "iou" : 0.45,
         "model_image_size" : (608, 608),
         "gpu_num" : 1,
@@ -251,12 +251,12 @@ class YOLO(object):
                     out_ids[column] = self.instances[-1][row]
                     out_velocity[column] = out_boxes[column] - self.prev_bbox[row]
                     out_velocity[column] = 0.1 * out_velocity[column] + 0.9 * self.prev_velocity[row]
-                    out_boxes[column] = 0.5*out_boxes[column] + 0.5*(self.prev_bbox[row] + out_velocity[column])
+                    out_boxes[column] = 0.25 * out_boxes[column] + 0.75 * (self.prev_bbox[row] + out_velocity[column])
                     frame_cnt[column] = self.prev_bbox_frame_cnt[row] + 1
             print(f'total cost: {total}')
 
             for index, box in enumerate(self.prev_bbox):
-                if not prev_mask[index] and self.prev_bbox_frame_cnt[index] > 7:
+                if not prev_mask[index] and self.prev_bbox_frame_cnt[index] > 12:
                     out_boxes = np.concatenate([out_boxes, [box+self.prev_velocity[index]]], axis=0)
                     frame_cnt = np.concatenate([frame_cnt, [self.prev_bbox_frame_cnt[index]]], axis=0)
                     out_classes = np.concatenate([out_classes, [0]], axis=0)
@@ -268,20 +268,21 @@ class YOLO(object):
             keep = (out_ids > 0)
             iou = self.bbox_overlap(out_boxes[drop], out_boxes[keep]).max(axis=1)
             nms_keep = nms(out_boxes[drop], out_scores[drop], 0.3)
-            keep[np.where(drop)[0][(iou<0.2) & nms_keep]] = True
+            keep[np.where(drop)[0][(iou<0.1) & nms_keep]] = True
             out_boxes = out_boxes[keep]
             frame_cnt = frame_cnt[keep]
             out_classes = out_classes[keep]
             out_scores = out_scores[keep]
             out_ids = out_ids[keep]
             out_velocity = out_velocity[keep]
-        # else:
-        #     keep = nms(out_boxes, out_scores, 0.3)
-        #     out_boxes = out_boxes[keep]
-        #     frame_cnt = frame_cnt[keep]
-        #     out_classes = out_classes[keep]
-        #     out_scores = out_scores[keep]
-        #     out_ids = out_ids[keep]
+        else:
+            keep = nms(out_boxes, out_scores, 0.3)
+            out_boxes = out_boxes[keep]
+            frame_cnt = frame_cnt[keep]
+            out_classes = out_classes[keep]
+            out_scores = out_scores[keep]
+            out_ids = out_ids[keep]
+            out_velocity = out_velocity[keep]
 
         self.prev_bbox = out_boxes.copy()
         self.prev_velocity = out_velocity.copy()
@@ -301,6 +302,7 @@ class YOLO(object):
             ins_id = out_ids[i]
             if frame_cnt[i] < 3:
                 ins_id = 0
+                continue
             label = '{}'.format(ins_id)
             draw = ImageDraw.Draw(image)
             label_size = draw.textsize(label, font)
@@ -354,19 +356,17 @@ def detect_video(yolo, video_path, output_path=""):
     curr_fps = 0
     fps = "FPS: ??"
     prev_time = timer()
-
-    channal_diff = np.int32(video_fps)
     history = []
     while True:
         return_value, frame = vid.read()
         if not return_value:
             break
-        # history.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
-        # if len(history)>=channal_diff+1:
-        #     frame[:,:,1] = history[-channal_diff-1]
-        # if len(history)>=channal_diff*2+1:
-        #     frame[:,:,2] = history[-channal_diff*2-1]
-        #     history.pop(0)
+        history.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+        if len(history)>=2:
+            frame[:,:,1] = history[-2]
+        if len(history)>=3:
+            frame[:,:,0] = history[-3]
+            history.pop(0)
         image = Image.fromarray(frame)
         image = yolo.detect_image(image)
         result = np.asarray(image)

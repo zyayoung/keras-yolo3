@@ -116,20 +116,18 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=50, jit
     if flipt: image = image.transpose(Image.TRANSPOSE)
 
     # distort image
-    # hue = rand(-hue, hue)
-    # sat = rand(1, sat) if rand()<.5 else 1/rand(1, sat)
-    # val = rand(1, val) if rand()<.5 else 1/rand(1, val)
-    # x = rgb_to_hsv(np.array(image)/255.)
-    # x[..., 0] += hue
-    # x[..., 0][x[..., 0]>1] -= 1
-    # x[..., 0][x[..., 0]<0] += 1
-    # x[..., 1] *= sat
-    # x[..., 2] *= val
-    # x[x>1] = 1
-    # x[x<0] = 0
-    # image_data = hsv_to_rgb(x) # numpy array, 0 to 1
-
-    image_data = np.array(image) / 255.
+    hue = rand(-hue, hue)
+    sat = rand(1, sat) if rand()<.5 else 1/rand(1, sat)
+    val = rand(1, val) if rand()<.5 else 1/rand(1, val)
+    x = rgb_to_hsv(np.array(image)/255.)
+    x[..., 0] += hue
+    x[..., 0][x[..., 0]>1] -= 1
+    x[..., 0][x[..., 0]<0] += 1
+    x[..., 1] *= sat
+    x[..., 2] *= val
+    x[x>1] = 1
+    x[x<0] = 0
+    image_data = hsv_to_rgb(x) # numpy array, 0 to 1
 
     # correct boxes
     box_data = np.zeros((max_boxes,5))
