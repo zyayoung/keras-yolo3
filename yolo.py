@@ -26,7 +26,7 @@ class YOLO(object):
         "classes_path": 'classes.txt',
         "score" : 0.1,
         "iou" : 0.45,
-        "model_image_size" : (608, 608),
+        "model_image_size" : (544, 544),
         "gpu_num" : 1,
     }
 
@@ -215,20 +215,16 @@ def detect_video(yolo, video_path, output_path=""):
     curr_fps = 0
     fps = "FPS: ??"
     prev_time = timer()
-
-    channal_diff = np.int32(video_fps)
-    history = {}
-    prev_bbox = None
-    sess = tf.Session()
+    # history = []
     while True:
         return_value, frame = vid.read()
         if not return_value:
             break
         # history.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
-        # if len(history)>=channal_diff+1:
-        #     frame[:,:,1] = history[-channal_diff-1]
-        # if len(history)>=channal_diff*2+1:
-        #     frame[:,:,2] = history[-channal_diff*2-1]
+        # if len(history)>=2:
+        #     frame[:,:,1] = history[-2]
+        # if len(history)>=3:
+        #     frame[:,:,0] = history[-3]
         #     history.pop(0)
         image = Image.fromarray(frame)
         image = yolo.detect_image(image)
