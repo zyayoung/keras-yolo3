@@ -26,7 +26,7 @@ class YOLO(object):
         "classes_path": 'classes.txt',
         "score" : 0.1,
         "iou" : 0.45,
-        "model_image_size" : (544, 544),
+        "model_image_size" : (832, 832),
         "gpu_num" : 1,
     }
 
@@ -215,17 +215,17 @@ def detect_video(yolo, video_path, output_path=""):
     curr_fps = 0
     fps = "FPS: ??"
     prev_time = timer()
-    # history = []
+    history = []
     while True:
         return_value, frame = vid.read()
         if not return_value:
             break
-        # history.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
-        # if len(history)>=2:
-        #     frame[:,:,1] = history[-2]
-        # if len(history)>=3:
-        #     frame[:,:,0] = history[-3]
-        #     history.pop(0)
+        history.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+        if len(history)>=2:
+            frame[:,:,1] = history[-2]
+        if len(history)>=3:
+            frame[:,:,0] = history[-3]
+            history.pop(0)
         image = Image.fromarray(frame)
         image = yolo.detect_image(image)
         result = np.asarray(image)
