@@ -160,28 +160,6 @@ class YOLO(object):
 
         out_ids = {}
         
-        connection = {}
-        if self.prev_bbox is not None:
-            matrix = self.bbox_overlaps_py(self.prev_bbox, out_boxes) + out_scores.T
-            matrix = 1/(np.asarray(matrix)+1e-6)
-            h, w = matrix.shape
-            _matrix = np.ones((max(h,w), max(h,w)))*1e6
-            _matrix[:h, :w] = matrix.copy()
-            # print(_matrix)
-            indexes = m.compute(_matrix)
-            total = 0
-            for row, column in indexes:
-                if row >= h or column >= w or matrix[row][column]>1e5:
-                    continue
-                value = matrix[row][column]
-                total += value
-                print(f'{row} -> {column} | {value}')
-                connection[row] = column
-                if self.instances and row in self.instances[-1].keys():
-                    out_ids[column] = self.instances[-1][row]
-            print(f'total cost: {total}')
-        self.prev_bbox = out_boxes.copy()
-
         font = ImageFont.truetype(font='font/FiraMono-Medium.otf',
                     size=np.floor(1e-2 * image.size[1] + 0.5).astype('int32'))
         thickness = (image.size[0] + image.size[1]) // 1000
@@ -190,10 +168,6 @@ class YOLO(object):
             predicted_class = self.class_names[c]
             box = out_boxes[i]
             score = out_scores[i]
-            if i not in out_ids.keys():
-                out_ids[i] = self.instance_count
-                self.instance_count += 1
-            ins_id = out_ids[i]
 
             label = '{} {:.2f}'.format(predicted_class, score)
             draw = ImageDraw.Draw(image)
@@ -215,15 +189,13 @@ class YOLO(object):
             for i in range(thickness):
                 draw.rectangle(
                     [left + i, top + i, right - i, bottom - i],
-                    outline=self.colors[ins_id])
+                    outline=self.colors[0])
             draw.rectangle(
                 [tuple(text_origin), tuple(text_origin + label_size)],
-                fill=self.colors[ins_id])
+                fill=self.colors[0])
             draw.text(text_origin, label, fill=(0, 0, 0), font=font)
             del draw
 
-        self.connections.append(connection)
-        self.instances.append(out_ids)
         end = timer()
         print(end - start)
         return image
