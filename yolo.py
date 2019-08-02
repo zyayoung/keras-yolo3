@@ -66,7 +66,7 @@ class YOLO(object):
         "classes_path": 'classes.txt',
         "score" : 0.01,
         "iou" : 0.45,
-        "model_image_size" : (608, 608),
+        "model_image_size" : (704, 704),
         "gpu_num" : 1,
     }
 
