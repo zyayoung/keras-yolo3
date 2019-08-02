@@ -19,9 +19,6 @@ from yolo3.utils import letterbox_image
 import os
 from keras.utils import multi_gpu_model
 
-from munkres import Munkres
-m = Munkres()
-
 class YOLO(object):
     _defaults = {
         "model_path": 'model_data/yolo.h5',
@@ -158,8 +155,6 @@ class YOLO(object):
 
         print('Found {} boxes for {}'.format(len(out_boxes), 'img'))
 
-        out_ids = {}
-        
         font = ImageFont.truetype(font='font/FiraMono-Medium.otf',
                     size=np.floor(1e-2 * image.size[1] + 0.5).astype('int32'))
         thickness = (image.size[0] + image.size[1]) // 1000
