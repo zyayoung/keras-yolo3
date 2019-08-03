@@ -42,6 +42,20 @@ def iou(bb_test,bb_gt):
     + (bb_gt[2]-bb_gt[0])*(bb_gt[3]-bb_gt[1]) - wh)
   return(o)
 
+@jit
+def dis(bb_test,bb_gt):
+  """
+  Computes IUO between two bboxes in the form [x1,y1,x2,y2]
+  """
+  ax = (bb_test[2]+bb_test[0])/2
+  ay = (bb_test[3]+bb_test[1])/2
+  bx = (bb_gt[2]+bb_gt[0])/2
+  by = (bb_gt[3]+bb_gt[1])/2
+  area = (bb_test[2]-bb_test[0])*(bb_test[3]-bb_test[1])
+  area *= (bb_gt[2]-bb_gt[0])*(bb_gt[3]-bb_gt[1])
+  distance = (np.square(ax-bx) + np.square(ay-by)) / np.sqrt(area)
+  return np.sqrt(distance)
+
 def convert_bbox_to_z(bbox):
   """
   Takes a bounding box in the form [x1,y1,x2,y2] and returns z in the form
@@ -128,7 +142,7 @@ class KalmanBoxTracker(object):
     """
     return convert_x_to_bbox(self.kf.x)
 
-def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.1):
+def associate_detections_to_trackers(detections,trackers,iou_threshold=4):
   """
   Assigns detections to tracked object (both represented as bounding boxes)
   Returns 3 lists of matches, unmatched_detections and unmatched_trackers
@@ -139,8 +153,8 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.1):
 
   for d,det in enumerate(detections):
     for t,trk in enumerate(trackers):
-      iou_matrix[d,t] = iou(det,trk)
-  matched_indices = linear_assignment(-iou_matrix)
+      iou_matrix[d,t] = -iou(det,trk) + dis(det, trk)
+  matched_indices = linear_assignment(iou_matrix)
 
   unmatched_detections = []
   for d,det in enumerate(detections):
@@ -154,7 +168,8 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.1):
   #filter out matched with low IOU
   matches = []
   for m in matched_indices:
-    if(iou_matrix[m[0],m[1]]<iou_threshold):
+    if(iou_matrix[m[0],m[1]]>iou_threshold):
+      print('{}-{}x'.format(m[0], m[1]))
       unmatched_detections.append(m[0])
       unmatched_trackers.append(m[1])
     else:
