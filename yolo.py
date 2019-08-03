@@ -256,7 +256,7 @@ class YOLO(object):
             print(f'total cost: {total}')
 
             for index, box in enumerate(self.prev_bbox):
-                if not prev_mask[index] and self.prev_bbox_frame_cnt[index] > 12:
+                if not prev_mask[index] and self.prev_bbox_frame_cnt[index] > 8:
                     out_boxes = np.concatenate([out_boxes, [box+self.prev_velocity[index]]], axis=0)
                     frame_cnt = np.concatenate([frame_cnt, [self.prev_bbox_frame_cnt[index]]], axis=0)
                     out_classes = np.concatenate([out_classes, [0]], axis=0)
@@ -300,7 +300,7 @@ class YOLO(object):
                 out_ids[i] = self.instance_count
                 self.instance_count += 1
             ins_id = out_ids[i]
-            if frame_cnt[i] < 3:
+            if frame_cnt[i] < 2:
                 ins_id = 0
                 continue
             label = '{}'.format(ins_id)
