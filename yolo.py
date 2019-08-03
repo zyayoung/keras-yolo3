@@ -217,6 +217,8 @@ class YOLO(object):
 
         print('Found {} boxes for {}'.format(len(out_boxes), 'img'))
 
+        R, _ , _ = image.split()
+        image = Image.merge("RGB", [R,R,R])
         
         connection = {}
         out_ids = np.zeros(len(out_boxes), int)
@@ -240,7 +242,7 @@ class YOLO(object):
             total = 0
             prev_mask = np.zeros(len(self.prev_bbox), dtype=bool)
             for row, column in indexes:
-                if row >= h or column >= w or matrix[row][column]>10:
+                if row >= h or column >= w or matrix[row][column] > 2:
                     continue
                 value = matrix[row][column]
                 total += value
@@ -365,7 +367,7 @@ def detect_video(yolo, video_path, output_path=""):
         if len(history)>=2:
             frame[:,:,1] = history[-2]
         if len(history)>=3:
-            frame[:,:,0] = history[-3]
+            frame[:,:,2] = history[-3]
             history.pop(0)
         image = Image.fromarray(frame)
         image = yolo.detect_image(image)
