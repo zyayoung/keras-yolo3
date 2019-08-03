@@ -24,6 +24,8 @@ from keras.utils import multi_gpu_model
 from munkres import Munkres, DISALLOWED
 m = Munkres()
 
+from sort import Sort
+
 def nms(dets, scores, thresh):
     """
     greedily select boxes with high confidence and overlap with current maximum <= thresh
@@ -84,13 +86,7 @@ class YOLO(object):
         self.anchors = self._get_anchors()
         self.sess = K.get_session()
         self.boxes, self.scores, self.classes = self.generate()
-        self.prev_bbox = None
-        self.prev_velocity = None
-        self.prev_bbox_frame_cnt = None
-        self.connections = []
-        self.instances = []
-        self.instance_count = 1
-        # print(self.boxes[0])
+        self.mot_tracker = Sort(max_age=12, min_hits=3)
 
     def _get_class(self):
         classes_path = os.path.expanduser(self.classes_path)
@@ -216,93 +212,18 @@ class YOLO(object):
             })
 
         print('Found {} boxes for {}'.format(len(out_boxes), 'img'))
+        dets = np.hstack((out_boxes, np.expand_dims(out_scores, 1)))
+        trackers = self.mot_tracker.update(dets)
 
-        
-        connection = {}
-        out_ids = np.zeros(len(out_boxes), int)
-        frame_cnt = np.zeros(len(out_boxes))
-        out_velocity = np.zeros((len(out_boxes),4))
-        if self.prev_bbox is not None:
-            # matrix = 1/608*self.bbox_distance(self.prev_bbox, out_boxes, image.width*image.height) \
-            #     + 1/self.bbox_overlap(self.prev_bbox, out_boxes)\
-            matrix = 1/( \
-                self.bbox_overlap(self.prev_bbox+self.prev_velocity, out_boxes) + \
-                    np.exp(-61*self.bbox_distance(self.prev_bbox, out_boxes, image.width*image.height))+ \
-                    0)# - np.repeat(np.expand_dims(self.prev_bbox_frame_cnt, axis=1)/64, len(out_scores), axis=1) + 1/(out_scores.T+0.5)
-            #  - np.repeat(np.expand_dims(self.prev_bbox_frame_cnt, axis=1)/10, len(out_scores), axis=1)
-            #  + out_scores.T
-            h, w = matrix.shape
-            matrix[matrix>1e6]=1e6
-            _matrix = np.ones((max(h,w), max(h,w)))*1e6
-            _matrix[:h, :w] = matrix.copy()
-            # print(_matrix)
-            indexes = m.compute(_matrix)
-            total = 0
-            prev_mask = np.zeros(len(self.prev_bbox), dtype=bool)
-            for row, column in indexes:
-                if row >= h or column >= w or matrix[row][column]>10:
-                    continue
-                value = matrix[row][column]
-                total += value
-                print(f'{row} -> {column} | {value}')
-                connection[row] = column
-                if self.instances and self.instances[-1][row] > 0:
-                    prev_mask[row] = True
-                    out_ids[column] = self.instances[-1][row]
-                    out_velocity[column] = out_boxes[column] - self.prev_bbox[row]
-                    out_velocity[column] = 0.1 * out_velocity[column] + 0.9 * self.prev_velocity[row]
-                    out_boxes[column] = 0.25 * out_boxes[column] + 0.75 * (self.prev_bbox[row] + out_velocity[column])
-                    frame_cnt[column] = self.prev_bbox_frame_cnt[row] + 1
-            print(f'total cost: {total}')
-
-            for index, box in enumerate(self.prev_bbox):
-                if not prev_mask[index] and self.prev_bbox_frame_cnt[index] > 8:
-                    out_boxes = np.concatenate([out_boxes, [box+self.prev_velocity[index]]], axis=0)
-                    frame_cnt = np.concatenate([frame_cnt, [self.prev_bbox_frame_cnt[index]]], axis=0)
-                    out_classes = np.concatenate([out_classes, [0]], axis=0)
-                    out_scores = np.concatenate([out_scores, [0]], axis=0)
-                    out_velocity = np.concatenate([out_velocity, [0.9*self.prev_velocity[index]]], axis=0)
-                    out_ids = np.concatenate([out_ids, [self.instances[-1][index]]], axis=0)
-
-            drop = (out_ids == 0)
-            keep = (out_ids > 0)
-            iou = self.bbox_overlap(out_boxes[drop], out_boxes[keep]).max(axis=1)
-            nms_keep = nms(out_boxes[drop], out_scores[drop], 0.3)
-            keep[np.where(drop)[0][(iou<0.1) & nms_keep]] = True
-            out_boxes = out_boxes[keep]
-            frame_cnt = frame_cnt[keep]
-            out_classes = out_classes[keep]
-            out_scores = out_scores[keep]
-            out_ids = out_ids[keep]
-            out_velocity = out_velocity[keep]
-        else:
-            keep = nms(out_boxes, out_scores, 0.3)
-            out_boxes = out_boxes[keep]
-            frame_cnt = frame_cnt[keep]
-            out_classes = out_classes[keep]
-            out_scores = out_scores[keep]
-            out_ids = out_ids[keep]
-            out_velocity = out_velocity[keep]
-
-        self.prev_bbox = out_boxes.copy()
-        self.prev_velocity = out_velocity.copy()
-        self.prev_bbox_frame_cnt = frame_cnt
-
-        font = ImageFont.truetype(font='font/FiraMono-Medium.otf',
-                    size=np.floor(2e-2 * image.size[1] + 0.5).astype('int32'))
+        font = ImageFont.truetype(
+            font='font/FiraMono-Medium.otf',
+            size=np.floor(2e-2 * image.size[1] + 0.5).astype('int32')
+        )
         thickness = (image.size[0] + image.size[1]) // 1000
 
-        for i, c in list(enumerate(out_classes)):
-            predicted_class = self.class_names[c]
-            box = out_boxes[i]
-            score = out_scores[i]
-            if out_ids[i] == 0:
-                out_ids[i] = self.instance_count
-                self.instance_count += 1
-            ins_id = out_ids[i]
-            if frame_cnt[i] < 2:
-                ins_id = 0
-                continue
+        for i, d in list(enumerate(trackers)):
+            box = d[:4]
+            ins_id = int(d[4]+0.5)
             label = '{}'.format(ins_id)
             draw = ImageDraw.Draw(image)
             label_size = draw.textsize(label, font)
@@ -330,8 +251,6 @@ class YOLO(object):
             draw.text(text_origin, label, fill=(0, 0, 0), font=font)
             del draw
 
-        self.connections.append(connection)
-        self.instances.append(out_ids)
         end = timer()
         print(end - start)
         return image
