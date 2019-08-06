@@ -66,7 +66,7 @@ class YOLO(object):
         "classes_path": 'classes.txt',
         "score" : 0.01,
         "iou" : 0.45,
-        "model_image_size" : (704, 704),
+        "model_image_size" : (1024, 1024),
         "gpu_num" : 1,
     }
 
@@ -130,7 +130,7 @@ class YOLO(object):
         return overlaps
 
     @staticmethod
-    def bbox_distance(boxes, query_boxes, area):
+    def bbox_distance(boxes, query_boxes):
         """
         determine distance between boxes and query_boxes
         :param boxes: n * 4 bounding boxes
@@ -142,10 +142,14 @@ class YOLO(object):
         bx = (query_boxes[:,2]+query_boxes[:,0])/2
         by = (query_boxes[:,3]+query_boxes[:,1])/2
         distance = np.zeros((ax.shape[0], bx.shape[0]), dtype=np.float)
+        area = np.zeros((ax.shape[0], bx.shape[0]), dtype=np.float)
         for i in range(ax.shape[0]):
             for j in range(bx.shape[0]):
                 distance[i, j] = np.square(ax[i]-bx[j]) + np.square(ay[i]-by[j])
-        distance = np.sqrt(distance/area)
+                a4 = (boxes[i,2]-boxes[i,0])*(boxes[i,3]-boxes[i,1])*(query_boxes[j,2]-query_boxes[j,0])*(query_boxes[j,3]-query_boxes[j,1])
+                a4 = max(1e-6, a4)
+                distance[i, j] /= np.sqrt(a4)
+        distance = np.sqrt(distance)
         # distance /= distance.min()
         return distance
 
@@ -227,14 +231,14 @@ class YOLO(object):
         if self.prev_bbox is not None:
             # matrix = 1/608*self.bbox_distance(self.prev_bbox, out_boxes, image.width*image.height) \
             #     + 1/self.bbox_overlap(self.prev_bbox, out_boxes)\
-            matrix = 1/( \
-                self.bbox_overlap(self.prev_bbox+self.prev_velocity, out_boxes) + \
-                    np.exp(-61*self.bbox_distance(self.prev_bbox, out_boxes, image.width*image.height))+ \
-                    0)# - np.repeat(np.expand_dims(self.prev_bbox_frame_cnt, axis=1)/64, len(out_scores), axis=1) + 1/(out_scores.T+0.5)
+            prev_speed = np.sqrt((self.prev_velocity[:,2]-self.prev_velocity[:,0])**2+(self.prev_velocity[:,1]-self.prev_velocity[:,3])**2)
+            matrix =  \
+                - self.bbox_overlap(self.prev_bbox+self.prev_velocity, out_boxes) + \
+                self.bbox_distance(self.prev_bbox+self.prev_velocity, out_boxes) + \
+                - np.repeat(np.expand_dims(prev_speed, axis=1)/16, len(out_scores), axis=1) # + 1/(out_scores.T+0.5)
             #  - np.repeat(np.expand_dims(self.prev_bbox_frame_cnt, axis=1)/10, len(out_scores), axis=1)
             #  + out_scores.T
             h, w = matrix.shape
-            matrix[matrix>1e6]=1e6
             _matrix = np.ones((max(h,w), max(h,w)))*1e6
             _matrix[:h, :w] = matrix.copy()
             # print(_matrix)
@@ -242,7 +246,7 @@ class YOLO(object):
             total = 0
             prev_mask = np.zeros(len(self.prev_bbox), dtype=bool)
             for row, column in indexes:
-                if row >= h or column >= w or matrix[row][column] > 2:
+                if row >= h or column >= w or matrix[row][column] > 1:
                     continue
                 value = matrix[row][column]
                 total += value
@@ -253,7 +257,16 @@ class YOLO(object):
                     out_ids[column] = self.instances[-1][row]
                     out_velocity[column] = out_boxes[column] - self.prev_bbox[row]
                     out_velocity[column] = 0.1 * out_velocity[column] + 0.9 * self.prev_velocity[row]
-                    out_boxes[column] = 0.25 * out_boxes[column] + 0.75 * (self.prev_bbox[row] + out_velocity[column])
+                    pred_pos = self.prev_bbox[row] + out_velocity[column]
+                    if(pred_pos[2]-pred_pos[0] < 20):
+                        mid = (pred_pos[2]+pred_pos[0]) / 2
+                        pred_pos[0] = mid - 10
+                        pred_pos[2] = mid + 10
+                    if(pred_pos[3]-pred_pos[1] < 20):
+                        mid = (pred_pos[3]+pred_pos[1]) / 2
+                        pred_pos[1] = mid - 10
+                        pred_pos[3] = mid + 10
+                    out_boxes[column] = 0.25 * out_boxes[column] + 0.75 * pred_pos
                     frame_cnt[column] = self.prev_bbox_frame_cnt[row] + 1
             print(f'total cost: {total}')
 
@@ -367,7 +380,7 @@ def detect_video(yolo, video_path, output_path=""):
         if len(history)>=2:
             frame[:,:,1] = history[-2]
         if len(history)>=3:
-            frame[:,:,2] = history[-3]
+            frame[:,:,0] = history[-3]
             history.pop(0)
         image = Image.fromarray(frame)
         image = yolo.detect_image(image)
