@@ -24,7 +24,7 @@ from keras.utils import multi_gpu_model
 from munkres import Munkres, DISALLOWED
 m = Munkres()
 
-from sort import Sort
+from lstmsort import Sort
 
 def nms(dets, scores, thresh):
     """
@@ -68,7 +68,7 @@ class YOLO(object):
         "classes_path": 'classes.txt',
         "score" : 0.01,
         "iou" : 0.45,
-        "model_image_size" : (704, 704),
+        "model_image_size" : (1024, 1024),
         "gpu_num" : 1,
     }
 
@@ -213,7 +213,7 @@ class YOLO(object):
 
         print('Found {} boxes for {}'.format(len(out_boxes), 'img'))
         dets = np.hstack((out_boxes, np.expand_dims(out_scores, 1)))
-        trackers = self.mot_tracker.update(dets)
+        trackers, lost, rets = self.mot_tracker.update(dets)
 
         font = ImageFont.truetype(
             font='font/FiraMono-Medium.otf',
@@ -222,6 +222,35 @@ class YOLO(object):
         thickness = (image.size[0] + image.size[1]) // 1000
 
         for i, d in list(enumerate(trackers)):
+            box = d[:4]
+            ins_id = int(d[4]+0.5)
+            label = '{}'.format(ins_id)
+            draw = ImageDraw.Draw(image)
+            label_size = draw.textsize(label, font)
+            
+            top, left, bottom, right = box
+            top = max(0, np.floor(top + 0.5).astype('int32'))
+            left = max(0, np.floor(left + 0.5).astype('int32'))
+            bottom = min(image.size[1], np.floor(bottom + 0.5).astype('int32'))
+            right = min(image.size[0], np.floor(right + 0.5).astype('int32'))
+            print(label, (left, top), (right, bottom))
+
+            if top - label_size[1] >= 0:
+                text_origin = np.array([left, top - label_size[1]])
+            else:
+                text_origin = np.array([left, top + 1])
+
+            # My kingdom for a good redistributable image drawing library.
+            for i in range(thickness):
+                draw.rectangle(
+                    [left + i, top + i, right - i, bottom - i],
+                    outline=self.colors[ins_id])
+            draw.rectangle(
+                [tuple(text_origin), tuple(text_origin + label_size)],
+                fill=self.colors[ins_id])
+            draw.text(text_origin, label, fill=(0, 0, 0), font=font)
+            del draw
+        for i, d in list(enumerate(lost)):
             box = d[:4]
             ins_id = int(d[4]+0.5)
             label = '{}'.format(ins_id)
@@ -244,10 +273,10 @@ class YOLO(object):
             for i in range(thickness):
                 draw.rectangle(
                     [left + i, top + i, right - i, bottom - i],
-                    outline=self.colors[ins_id])
+                    outline=(127, 127, 127))
             draw.rectangle(
                 [tuple(text_origin), tuple(text_origin + label_size)],
-                fill=self.colors[ins_id])
+                fill=(127, 127, 127))
             draw.text(text_origin, label, fill=(0, 0, 0), font=font)
             del draw
 

@@ -29,6 +29,12 @@ import time
 import argparse
 from filterpy.kalman import KalmanFilter
 
+from keras.models import load_model
+
+
+model = load_model("lstm.h5")
+n_step = 12
+
 @jit
 def iou(bb_test,bb_gt):
   """
@@ -77,7 +83,7 @@ class KalmanBoxTracker(object):
   This class represents the internel state of individual tracked objects observed as bbox.
   """
   count = 0
-  def __init__(self,bbox):
+  def __init__(self,bbox, w, h):
     """
     Initialises a tracker using initial bounding box.
     """
@@ -100,6 +106,8 @@ class KalmanBoxTracker(object):
     self.hits = 0
     self.hit_streak = 0
     self.age = 0
+    self.w = w
+    self.h = h
 
   def update(self,bbox):
     """
@@ -122,13 +130,37 @@ class KalmanBoxTracker(object):
     if(self.time_since_update>0):
       self.hit_streak = 0
     self.time_since_update += 1
-    self.history.append(convert_x_to_bbox(self.kf.x))
+    if self.history:
+      bbox = np.array(self.history[-1])[0]
+      if (bbox[0] > self.w or bbox[1] > self.h or bbox[2] < 0 or bbox[3] < 0):
+        return self.history[-1]
+
+    if(len(self.history)>=n_step):
+      X = np.array(self.history[-n_step:])[:,0,:]
+      X[:,[0,2]]/=self.w
+      X[:,[1,3]]/=self.h
+      y = model.predict(np.expand_dims(X,0))[0]
+      y[[0,2]]*=self.w
+      y[[1,3]]*=self.h
+      self.history.append(np.expand_dims(y, 0))
+    else:
+      self.history.append(convert_x_to_bbox(self.kf.x))
+    # self.history.append(convert_x_to_bbox(self.kf.x))
     return self.history[-1]
 
   def get_state(self):
     """
     Returns the current bounding box estimate.
     """
+    if(len(self.history)>=n_step):
+      X = np.array(self.history[-n_step:])[:,0,:]
+      X[:,[0,2]]/=self.w
+      X[:,[1,3]]/=self.h
+      y = model.predict(np.expand_dims(X,0))[0]
+      # print(X, y)
+      y[[0,2]]*=self.w
+      y[[1,3]]*=self.h
+      return np.expand_dims(y, 0)
     return convert_x_to_bbox(self.kf.x)
 
 def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.1):
@@ -176,7 +208,7 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.1):
 
 
 class Sort(object):
-  def __init__(self,max_age=12,min_hits=0):
+  def __init__(self,max_age=12,min_hits=0, w=1224, h=1024):
     """
     Sets key parameters for SORT
     """
@@ -184,6 +216,8 @@ class Sort(object):
     self.min_hits = min_hits
     self.trackers = []
     self.frame_count = 0
+    self.w = w
+    self.h = h
 
   def update(self,dets):
     """
@@ -217,7 +251,7 @@ class Sort(object):
 
     #create and initialise new trackers for unmatched detections
     for i in unmatched_dets:
-        trk = KalmanBoxTracker(dets[i,:]) 
+        trk = KalmanBoxTracker(dets[i,:], self.w, self.h) 
         self.trackers.append(trk)
     i = len(self.trackers)
     tracker_ret = []
