@@ -188,7 +188,7 @@ def yolo_eval(yolo_outputs,
               anchors,
               num_classes,
               image_shape,
-              max_boxes=50,
+              max_boxes=100,
               score_threshold=.6,
               iou_threshold=.5,
               nms=False):
