@@ -2,9 +2,11 @@
 
 from functools import reduce
 
-from PIL import Image
+from PIL import Image, ImageEnhance
 import numpy as np
 from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
+
+import time
 
 def compose(*funcs):
     """Compose arbitrarily many functions, evaluated left to right.
@@ -33,7 +35,7 @@ def letterbox_image(image, size):
 def rand(a=0, b=1):
     return np.random.rand()*(b-a) + a
 
-def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jitter=.3, hue=.1, sat=1.5, val=1.5, proc_img=True):
+def get_random_data(annotation_line, input_shape, random=True, max_boxes=50, jitter=.3, hue=.1, sat=1.5, val=1.5, proc_img=True):
     '''random preprocessing for real-time data augmentation'''
     line = annotation_line.split()
     image = Image.open(line[0])
@@ -84,9 +86,34 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
     new_image.paste(image, (dx, dy))
     image = new_image
 
-    # flip image or not
-    flip = rand()<.5
-    if flip: image = image.transpose(Image.FLIP_LEFT_RIGHT)
+    # Enhance
+    bright = rand()<.5
+    if bright: 
+        factor = np.exp(np.random.normal(0, 0.25))
+        image = ImageEnhance.Brightness(image).enhance(factor)
+    
+    contrast = rand()<.5
+    if contrast:
+        factor = np.exp(np.random.normal(0, 0.25))
+        image = ImageEnhance.Contrast(image).enhance(factor)
+    
+    sharp = rand()<.5
+    
+    if sharp: 
+        factor = np.exp(np.random.normal(0, 0.25))
+        image = ImageEnhance.Sharpness(image).enhance(factor)
+
+    # flipv image or not
+    flipv = rand()<.5
+    if flipv: image = image.transpose(Image.FLIP_LEFT_RIGHT)
+
+    # fliph image or not
+    fliph = rand()<.5
+    if fliph: image = image.transpose(Image.FLIP_TOP_BOTTOM)
+
+    # flipt image or not
+    flipt = rand()<.5
+    if flipt: image = image.transpose(Image.TRANSPOSE)
 
     # distort image
     hue = rand(-hue, hue)
@@ -108,7 +135,9 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
         np.random.shuffle(box)
         box[:, [0,2]] = box[:, [0,2]]*nw/iw + dx
         box[:, [1,3]] = box[:, [1,3]]*nh/ih + dy
-        if flip: box[:, [0,2]] = w - box[:, [2,0]]
+        if flipv: box[:, [0,2]] = w - box[:, [2,0]]
+        if fliph: box[:, [1,3]] = h - box[:, [3,1]]
+        if flipt: box[:, :] = h - box[:, [1,0,3,2,4]]
         box[:, 0:2][box[:, 0:2]<0] = 0
         box[:, 2][box[:, 2]>w] = w
         box[:, 3][box[:, 3]>h] = h
@@ -117,5 +146,4 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
         box = box[np.logical_and(box_w>1, box_h>1)] # discard invalid box
         if len(box)>max_boxes: box = box[:max_boxes]
         box_data[:len(box)] = box
-
     return image_data, box_data
