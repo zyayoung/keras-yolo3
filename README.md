@@ -47,7 +47,7 @@ optional arguments:
 ```
 ---
 
-4. MultiGPU usage: use `--gpu_num N` to use N GPUs. It is passed to the [Keras multi_gpu_model()](https://keras.io/utils/#multi_gpu_model).
+4. MultiGPU usage is an optinal. Change the number of gpu and add gpu device id
 
 ## Training
 
