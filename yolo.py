@@ -20,6 +20,7 @@ import os
 from keras.utils import multi_gpu_model
 
 import pickle
+import gzip
 
 class YOLO(object):
     _defaults = {
@@ -246,8 +247,8 @@ def detect_video(yolo, video_path, output_path=""):
             out.write(result)
         if cv2.waitKey(1) & 0xFF == ord('q'):
            break
-    bbox_path ='.'.join(video_path.split('.')[:-1])+'.txt'
-    with open(bbox_path, "wb") as f:
+    bbox_path ='.'.join(video_path.split('.')[:-1])+'.pkl.gz'
+    with gzip.open(bbox_path, "wb") as f:
         pickle.dump(bbox_history, f)
         print("Saving to {}".format(bbox_path))
     yolo.close_session()
