@@ -9,9 +9,6 @@ from timeit import default_timer as timer
 import tensorflow as tf
 
 import numpy as np
-from keras import backend as K
-from keras.models import load_model
-from keras.layers import Input
 from PIL import Image, ImageFont, ImageDraw
 
 from yolo3.model import yolo_eval, yolo_body, tiny_yolo_body, box_iou
@@ -19,11 +16,17 @@ from yolo3.utils import letterbox_image
 import os
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-from keras.utils import multi_gpu_model
 gpu_num=1
 
 import pickle
 import gzip
+
+from keras import backend as K
+from keras.models import load_model
+from keras.layers import Input
+from keras.utils import multi_gpu_model
+
+from tqdm import tqdm
 
 class YOLO(object):
     _defaults = {
@@ -31,7 +34,7 @@ class YOLO(object):
         "anchors_path": 'anchors.txt',
         "classes_path": 'classes.txt',
         "score" : 0.001,
-        "iou" : 0.45,
+        "iou" : 0.99,
         "model_image_size" : (608, 608)
     }
 
@@ -130,8 +133,6 @@ class YOLO(object):
         return boxes, scores, classes
 
     def detect_image(self, image):
-        start = timer()
-
         if self.model_image_size != (None, None):
             assert self.model_image_size[0]%32 == 0, 'Multiples of 32 required'
             assert self.model_image_size[1]%32 == 0, 'Multiples of 32 required'
@@ -142,7 +143,6 @@ class YOLO(object):
             boxed_image = letterbox_image(image, new_image_size)
         image_data = np.array(boxed_image, dtype='float32')
 
-        print(image_data.shape)
         image_data /= 255.
         image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
 
@@ -153,48 +153,7 @@ class YOLO(object):
                 self.input_image_shape: [image.size[1], image.size[0]],
                 K.learning_phase(): 0
             })
-
-        print('Found {} boxes for {}'.format(len(out_boxes), 'img'))
-
-        font = ImageFont.truetype(font='font/FiraMono-Medium.otf',
-                    size=np.floor(1e-2 * image.size[1] + 0.5).astype('int32'))
-        thickness = (image.size[0] + image.size[1]) // 1000
-
-        for i, c in list(enumerate(out_classes)):
-            predicted_class = self.class_names[c]
-            box = out_boxes[i]
-            score = out_scores[i]
-
-            label = '{} {:.2f}'.format(predicted_class, score)
-            draw = ImageDraw.Draw(image)
-            label_size = draw.textsize(label, font)
-
-            top, left, bottom, right = box
-            top = max(0, np.floor(top + 0.5).astype('int32'))
-            left = max(0, np.floor(left + 0.5).astype('int32'))
-            bottom = min(image.size[1], np.floor(bottom + 0.5).astype('int32'))
-            right = min(image.size[0], np.floor(right + 0.5).astype('int32'))
-            print(label, (left, top), (right, bottom))
-
-            if top - label_size[1] >= 0:
-                text_origin = np.array([left, top - label_size[1]])
-            else:
-                text_origin = np.array([left, top + 1])
-
-            # My kingdom for a good redistributable image drawing library.
-            for i in range(thickness):
-                draw.rectangle(
-                    [left + i, top + i, right - i, bottom - i],
-                    outline=self.colors[0])
-            draw.rectangle(
-                [tuple(text_origin), tuple(text_origin + label_size)],
-                fill=self.colors[0])
-            draw.text(text_origin, label, fill=(0, 0, 0), font=font)
-            del draw
-
-        end = timer()
-        print(end - start)
-        return image, out_boxes, out_scores, out_classes
+        return image, np.array(out_boxes, dtype=int), np.array(out_scores, dtype=np.float16), np.array(out_classes, dtype=np.uint8)
 
     def close_session(self):
         self.sess.close()
@@ -208,47 +167,25 @@ def detect_video(yolo, video_path, output_path=""):
     video_fps       = vid.get(cv2.CAP_PROP_FPS)
     video_size      = (int(vid.get(cv2.CAP_PROP_FRAME_WIDTH)),
                         int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT)))
-    isOutput = True if output_path != "" else False
-    if isOutput:
-        print("!!! TYPE:", type(output_path), type(video_FourCC), type(video_fps), type(video_size))
-        out = cv2.VideoWriter(output_path, video_FourCC, video_fps, video_size)
-    accum_time = 0
-    curr_fps = 0
-    fps = "FPS: ??"
-    prev_time = timer()
+    video_frame_count = int(vid.get(cv2.CAP_PROP_FRAME_COUNT))
     history = []
     bbox_history = []
-    while True:
-        return_value, frame = vid.read()
-        if not return_value:
-            break
-        history.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
-        if len(history)>=2:
-            frame[:,:,1] = history[-2]
-        if len(history)>=3:
-            frame[:,:,0] = history[-3]
-            history.pop(0)
-        image = Image.fromarray(frame)
-        image, out_boxes, out_scores, out_classes = yolo.detect_image(image)
-        bbox_history.append((out_boxes, out_scores, out_classes))
-        result = np.asarray(image)
-        curr_time = timer()
-        exec_time = curr_time - prev_time
-        prev_time = curr_time
-        accum_time = accum_time + exec_time
-        curr_fps = curr_fps + 1
-        if accum_time > 1:
-            accum_time = accum_time - 1
-            fps = "FPS: " + str(curr_fps)
-            curr_fps = 0
-        cv2.putText(result, text=fps, org=(3, 15), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.50, color=(255, 0, 0), thickness=2)
-        cv2.namedWindow("result", cv2.WINDOW_NORMAL)
-        cv2.imshow("result", result)
-        if isOutput:
-            out.write(result)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-           break
+    with tqdm(total=video_frame_count) as pbar:
+        for frame_id in range(video_frame_count):
+            return_value, frame = vid.read()
+            if not return_value:
+                print("Frame count not consistant!")
+                break
+            history.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+            if len(history)>=2:
+                frame[:,:,1] = history[-2]
+            if len(history)>=3:
+                frame[:,:,2] = history[-3]
+                history.pop(0)
+            image = Image.fromarray(frame)
+            image, out_boxes, out_scores, out_classes = yolo.detect_image(image)
+            bbox_history.append((out_boxes, out_scores, out_classes))
+            pbar.update()
     bbox_path ='.'.join(video_path.split('.')[:-1])+'.pkl.gz'
     with gzip.open(bbox_path, "wb") as f:
         pickle.dump(bbox_history, f)
