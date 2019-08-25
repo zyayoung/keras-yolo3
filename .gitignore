@@ -12,6 +12,7 @@ __pycache__/
 
 # C extensions
 *.so
+*.exe
 *.dll
 
 # Distribution / packaging
@@ -111,3 +112,4 @@ ENV/
 #
 *.mp4
 .vscode/
+.DS_Store
