@@ -18,7 +18,7 @@ class Config:
     w_mot = 0.3
     w_app_inv = 0
     w_mot_inv = -0.3
-    w_bbox = 0.7
+    w_bbox = 0#.7
     dth = 0.2
     initScore = 5
 
@@ -46,7 +46,7 @@ class MHT():
         # pre-process
         # get all re-id score
         # if os.path.exists(os.path.join(CONFIG.debug_path, 're_id', '%s.score'%sequence)):
-        #     print('loading re-id score from disk -------------------')
+        #    print('loading re-id score from disk -------------------')
         #     with open(os.path.join(CONFIG.debug_path, 're_id', '%s.score'%sequence),'rb') as f:
         #         self.reid_scores = pickle.load(f)
         # else:
@@ -66,7 +66,7 @@ class MHT():
     #     reid_scores = []
     #     path, img_list = utils.get_obj_img(CONFIG, self.sequence)
     #     for detections in range(len(data)):
-    #         print('processing frame %d ---------------'%detections)
+    #        print('processing frame %d ---------------'%detections)
     #         rois = data[detections]['rois'] # (N,4)
     #         roi_num = rois.shape[0]
     #         scores = np.zeros((roi_num, len(img_list)))
@@ -82,28 +82,30 @@ class MHT():
     def iterTracking(self, data):
         # filter the data with detection score and overlap nms
         for i in range(len(data)): # len(data)
-            print('current processing ------------------- '+str(i))
+            # print('current processing ------------------- '+str(i))
             # build and update track families
             self.formTrackFamily(data[i], i)
             # update the incompability list
             for treeId in range(len(self.trackTrees)):
-                print('current object ------------------- '+str(treeId))
+                # print('current object ------------------- '+str(treeId))
                 # generate the global hypothesis
                 paths, best_solution = self.treeToGraph(i+1, treeId)
-                print('before pruning -------------------------------')
-                for track in self.trackTrees[treeId]:
-                    track.show()
+                # print('before pruning -------------------------------')
+                # for track in self.trackTrees[treeId]:
+                #     track.show()
                 # N scan pruning
                 self.nScanPruning(paths, best_solution, treeId)
-                print('after pruning -------------------------------')
-                for track in self.trackTrees[treeId]:
-                    track.show()
+                # print('after pruning -------------------------------')
+                # for track in self.trackTrees[treeId]:
+                #     track.show()
                 # save the output
                 # tree.save2file('outs/tree/%d.txt'%i)
         # get best results
         results = []
         for obj_id in range(self.obj_num):
-            results.append(self.findBestSolution(data, obj_id))
+            best_solution = self.findBestSolution(data, obj_id)
+            print(best_solution)
+            results.append([data[fid]['rois'][s] for fid, s in enumerate(best_solution)])
         return results
 
 
@@ -133,15 +135,15 @@ class MHT():
             S_mot_inv = scores['inverse_motion']
             S_mot_bbox = scores['bbox_iou']
             score = w_mot*S_mot + w_mot_inv*S_mot_inv + w_bbox*S_mot_bbox
-            print('score -----------------------------------------')
-            # print('S_app: %f'%S_app)
-            # print('S_app_inv: %f'%S_app_inv)
-            print('S_mot: %f'%S_mot)
-            print('S_mot_inv: %f'%S_mot_inv)
-            print('S_mot_bbox: %f'%S_mot_bbox)
-            print('score: %f'%score)
+            # print('score -----------------------------------------')
+            # # print('S_app: %f'%S_app)
+            # # print('S_app_inv: %f'%S_app_inv)
+            # print('S_mot: %f'%S_mot)
+            # print('S_mot_inv: %f'%S_mot_inv)
+            # print('S_mot_bbox: %f'%S_mot_bbox)
+            # print('score: %f'%score)
             self.test_arr.append(score)
-            print('-----------------------------------------------')
+            # print('-----------------------------------------------')
         return score
 
 
@@ -232,7 +234,9 @@ class MHT():
         if t == 0:
             # build from ground truth
             for obj_id in range(self.obj_num):
-                bbox = rois[obj_id]
+                roi = rois[obj_id] # (y1,x1,y2,x2)
+                # print(roi)
+                bbox = [roi[1],roi[0],roi[3],roi[2]]
                 # create a root node
                 updated_score = CONFIG.initScore # self.updateScore(1.0, 0, 0, 0, init=True)
                 tree = Tree()
@@ -263,14 +267,14 @@ class MHT():
                             nodeObjs.append( {'treeId':treeId, 'node':node.identifier, 'obj_id': obj_id,
                                                 'bbox_pred':bbox_pred, 'bbox':node.data['bbox']} )
                 tempCurrentNode[obj_id] = nodeObjs
-            print('roi number: %d'%rois.shape[0])
+            # print('roi number: %d'%rois.shape[0])
             # if the roi has no gate with any object
             for i in range(rois.shape[0]):
-                print('current roi number is %d---------------------------------------------------'%i)
+                # print('current roi number is %d---------------------------------------------------'%i)
                 roi_gating = False
                 # for each detections, judge distance
                 roi = rois[i] # (y1,x1,y2,x2)
-                print(roi)
+                # print(roi)
                 bbox = [roi[1],roi[0],roi[3],roi[2]]
 
                 ### new start
@@ -288,7 +292,7 @@ class MHT():
                 
                 # we get roi bbox iou score with all nodes, now choose tree
                 for obj_id in range(self.obj_num):
-                    print('current obj is %d -----------------------'%obj_id)
+                    # print('current obj is %d -----------------------'%obj_id)
                     # judge the app score of this roi
                     # current_reid = self.reid_scores[t][i,obj_id]
                     # print('re-id score is %f'%current_reid)
@@ -313,13 +317,13 @@ class MHT():
                         inverse_motion = max(other_motions)
                     count = 0
                     for nodeId in range(len(tempCurrentNode[obj_id])):
-                        print('current is roi %d, obj %d, node %s'%(i,obj_id,tempCurrentNode[obj_id][nodeId]['node']))
+                        # print('current is roi %d, obj %d, node %s'%(i,obj_id,tempCurrentNode[obj_id][nodeId]['node']))
                         nodeRecord = tempCurrentNode[obj_id][nodeId]
                         # get current motion score
                         current_motion = roi_score[obj_id][nodeId]
                         # gating the node:
-                        print('distance with last frame number %d is %f'\
-                                %(int(nodeRecord['node'].split('_')[3]),current_motion))
+                        # print('distance with last frame number %d is %f'\
+                        #        %(int(nodeRecord['node'].split('_')[3]),current_motion))
                         if current_motion > CONFIG.dth:
                             # gating success 
                             # get bbox result
@@ -330,7 +334,7 @@ class MHT():
                             # get all the score we need for a new roi and target leaves
                             scores = {'detection':detections_scores[i],
                                         'current_motion':current_motion, 'inverse_motion':inverse_motion, 'bbox_iou':bbox_iou}
-                            print(scores)
+                            # print(scores)
                             node_score = self.updateScore(scores)
                             current_score = self.trackTrees[obj_id][nodeRecord['treeId']]\
                                                             .nodes[nodeRecord['node']].data['score']
@@ -341,7 +345,7 @@ class MHT():
                                                     .nodes[nodeRecord['node']].data['history_bbox']
                             history_bbox.append(bbox)
                             # add node
-                            print('creating node with %s'%(nodeRecord['node']))
+                            # print('creating node with %s'%(nodeRecord['node']))
                             self.trackTrees[obj_id][nodeRecord['treeId']]\
                                 .create_node(tag="T_"+str(t)+"_N_"+str(i), 
                                     identifier="t_"+str(t)+"_n_"+str(i)+"_"+str(count), 

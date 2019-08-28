@@ -17,14 +17,15 @@ class MWIS():
     def local_search(self):
         """Find weighted maximum independent sets in given graph
         """
-        command = './open-pls-1.0/bin/pls --algorithm=mwis --input-file=' + self.graph_file + ' --weighted --use-weight-file --timeout=1 --random-seed=0 > ' + self.out_file
+        command = './open-pls-1.0/bin/pls --algorithm=mwis --input-file=' + self.graph_file + ' --weighted --use-weight-file --timeout=1 --random-seed=0'
         # os.system(command)
-        process = subprocess.Popen(command.split())
+        process = subprocess.Popen(command.split(), stdout=subprocess.PIPE)
         process.wait()
         # read results
         sol_pattern = re.compile(r"best-solution   :(( \d+)+)")
-        with open(self.out_file, 'r') as f:
-            content = f.read()
+        with process.stdout as f:
+            content = f.read().decode()
+            # print(content)
         sol_match = re.search(sol_pattern, content)
         if sol_match:
             node_list = [int(x) for x in sol_match.group(1).split()]
@@ -88,12 +89,12 @@ class MWIS():
         # TODO: for each track, we get a score
         weights = []
         for path in paths:
-            print(path['weight'])
+            # print(path['weight'])
             weights.append(path['weight'])
         # write graph
         graph_dict = {}
-        print(paths)
-        print(edges)
+        # print(paths)
+        # print(edges)
         for edge in edges:
             if edge[0] in graph_dict:
                 graph_dict[edge[0]].append(edge[1])
@@ -121,14 +122,14 @@ class MWIS():
         # find best solution
         results = self.local_search()
         assert results != -1
-        print('best solation found--------------')
-        print(results)
+        # print('best solation found--------------')
+        # print(results)
         return paths, results
 
 def main():
     mwis = MWIS('test-my')
     results = mwis.local_search()
-    print(results)
+    # print(results)
 
 if __name__ == '__main__':
     main()

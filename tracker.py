@@ -20,7 +20,7 @@ from utils.nms import nms
 from mht import MHT
 
 class MultiTracker:
-    def __init__(self, video_path, output_path="", score=0.1, nms_threshold=0.45):
+    def __init__(self, video_path, output_path="", score=0.01, nms_threshold=0.65):
         self.score = score
         self.nms_threshold = nms_threshold
 
@@ -52,12 +52,11 @@ class MultiTracker:
         bbox_path ='.'.join(video_path.split('.')[:-1])+'.pkl.gz'
         with gzip.open(bbox_path, "rb") as f:
             self.bbox_history = pickle.load(f)
-        
-        self.mot_tracker = MHT(obj_num=24)
+        obj_num = len(self.process_frame(*self.bbox_history[0])['scores'])
+        print("obj_num:", obj_num)
+        self.mot_tracker = MHT(obj_num=obj_num)
 
-    def process_frame(self):
-        out_boxes, out_scores, out_classes = self.bbox_history.pop(0)
-
+    def process_frame(self, out_boxes, out_scores, out_classes):
         dets = np.hstack([out_boxes, np.expand_dims(out_scores, -1)])
         keep = nms(dets, self.nms_threshold)
         out_boxes = out_boxes[keep]
@@ -76,23 +75,32 @@ class MultiTracker:
             'class_ids': out_classes,
         }
     
+    def process_frames(self):
+        return [self.process_frame(*bbox) for bbox in self.bbox_history]
+    
+    def visualize(self, img, rois):
+        for roi in rois:
+            cv2.rectangle(img, (roi[1], roi[0]), (roi[3], roi[2]), (255, 0, 0), 5)
+        return img
+    
     def run(self):
-        data = [self.process_frame() for _ in range(len(self.bbox_history))]
-        self.mot_tracker.iterTracking(data)
-        return
-        while True:
+        rois_total = self.mot_tracker.iterTracking(self.process_frames())
+        rois_total = np.array(rois_total, dtype=int).transpose(1, 0, 2)
+        print(rois_total)
+        for rois in rois_total:
             return_value, frame = self.vid.read()
             if not return_value:
                 break
             image = Image.fromarray(frame)
             result = np.asarray(image)
+            result = self.visualize(result, rois)
             
             if self.out:
                 self.out.write(result)
             else:
                 cv2.namedWindow("result", cv2.WINDOW_NORMAL)
                 cv2.imshow("result", result)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
+                if cv2.waitKey(0) & 0xFF == ord('q'):
                     break
         if self.out:
             self.out.release()
