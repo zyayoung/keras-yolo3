@@ -190,4 +190,4 @@ def detect_video(yolo, video_path, output_path=""):
     with gzip.open(bbox_path, "wb") as f:
         pickle.dump(bbox_history, f)
         print("Saving to {}".format(bbox_path))
-    yolo.close_session()
+    # yolo.close_session()

@@ -20,7 +20,7 @@ from utils.nms import nms
 from sort import Sort
 
 class MultiTracker:
-    def __init__(self, video_path, output_path="", score=0.1, nms_threshold=0.45):
+    def __init__(self, video_path, output_path="", score=0.1, nms_threshold=0.3):
         self.score = score
         self.nms_threshold = nms_threshold
 

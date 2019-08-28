@@ -3,6 +3,7 @@
 # os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 import sys
+import os
 import argparse
 from PIL import Image
 
@@ -48,6 +49,11 @@ if __name__ == '__main__':
             track_video(FLAGS.input, FLAGS.output)
         else:
             from yolo import YOLO, detect_video
-            detect_video(YOLO(**vars(FLAGS)), FLAGS.input, FLAGS.output)
+            if '.' not in FLAGS.input:
+                for filename in os.listdir(FLAGS.input):
+                    if filename.endswith(".mp4"):
+                        detect_video(YOLO(**vars(FLAGS)), os.path.join(FLAGS.input, filename), FLAGS.output)
+            else:
+                detect_video(YOLO(**vars(FLAGS)), FLAGS.input, FLAGS.output)
     else:
         print("Must specify at least video_input_path.  See usage with --help.")

@@ -42,6 +42,18 @@ def iou(bb_test,bb_gt):
     + (bb_gt[2]-bb_gt[0])*(bb_gt[3]-bb_gt[1]) - wh)
   return(o)
 
+@jit
+def dis(bb_test,bb_gt):
+  """
+  Computes distance between two bboxes in the form [x1,y1,x2,y2]
+  """
+  area = abs((bb_gt[0] - bb_gt[2]) * (bb_gt[1] + bb_gt[3]))
+  x1 = (bb_test[0] + bb_test[2]) / 2
+  x2 = (bb_gt[0] + bb_gt[2]) / 2
+  y1 = (bb_test[1] + bb_test[3]) / 2
+  y2 = (bb_gt[1] + bb_gt[3]) / 2
+  return np.sqrt(((x1-x2)**2 + (y1-y2)**2) / area)
+
 def convert_bbox_to_z(bbox):
   """
   Takes a bounding box in the form [x1,y1,x2,y2] and returns z in the form
@@ -84,7 +96,7 @@ class KalmanBoxTracker(object):
     self.kf.H = np.array([[1,0,0,0,0,0,0],[0,1,0,0,0,0,0],[0,0,1,0,0,0,0],[0,0,0,1,0,0,0]])
 
     self.kf.R[2:,2:] *= 10.
-    self.kf.P[4:,4:] *= 1000. #give high uncertainty to the unobservable initial velocities
+    self.kf.P[4:,4:] *= 100. #give high uncertainty to the unobservable initial velocities
     self.kf.P *= 10.
     self.kf.Q[-1,-1] *= 0.01
     self.kf.Q[4:,4:] *= 0.01
@@ -98,7 +110,9 @@ class KalmanBoxTracker(object):
     self.hit_streak = 0
     self.age = 0
 
-  def update(self,bbox):
+    self.score = 0.5
+
+  def update(self, bbox):
     """
     Updates the state vector with observed bbox.
     """
@@ -106,7 +120,8 @@ class KalmanBoxTracker(object):
     self.history = []
     self.hits += 1
     self.hit_streak += 1
-    self.kf.update(convert_bbox_to_z(bbox))
+    self.kf.update(convert_bbox_to_z(bbox), R=self.kf.R / bbox[4] / self.score)
+    self.score = 0.8 * self.score + 0.1 * self.hits/self.age + 0.1 * bbox[4]
 
   def predict(self):
     """
@@ -120,7 +135,7 @@ class KalmanBoxTracker(object):
       self.hit_streak = 0
     self.time_since_update += 1
     self.history.append(convert_x_to_bbox(self.kf.x))
-    return self.history[-1]
+    return self.history[-1][0], self.score
 
   def get_state(self):
     """
@@ -139,7 +154,7 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.1):
 
   for d,det in enumerate(detections):
     for t,trk in enumerate(trackers):
-      iou_matrix[d,t] = iou(det,trk)
+      iou_matrix[d,t] = (iou(det,trk) + np.exp(-dis(det, trk))) * det[4] * trk[4]
 
   row_ind, col_ind = linear_sum_assignment(-iou_matrix)
 
@@ -172,7 +187,7 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.1):
 
 
 class Sort(object):
-  def __init__(self,max_age=12,min_hits=0):
+  def __init__(self,max_age=6,min_hits=0):
     """
     Sets key parameters for SORT
     """
@@ -195,8 +210,8 @@ class Sort(object):
     to_del = []
     ret = []
     for t,trk in enumerate(trks):
-      pos = self.trackers[t].predict()[0]
-      trk[:] = [pos[0], pos[1], pos[2], pos[3], 0]
+      pos, score = self.trackers[t].predict()
+      trk[:] = [pos[0], pos[1], pos[2], pos[3], score]
       if(np.any(np.isnan(pos))):
         to_del.append(t)
     trks = np.ma.compress_rows(np.ma.masked_invalid(trks))
