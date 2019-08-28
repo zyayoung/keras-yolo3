@@ -113,3 +113,4 @@ ENV/
 *.mp4
 .vscode/
 .DS_Store
+inputs/

@@ -1,4 +1,5 @@
 import os
+import subprocess
 import re
 
 class MWIS():
@@ -17,7 +18,9 @@ class MWIS():
         """Find weighted maximum independent sets in given graph
         """
         command = './open-pls-1.0/bin/pls --algorithm=mwis --input-file=' + self.graph_file + ' --weighted --use-weight-file --timeout=1 --random-seed=0 > ' + self.out_file
-        os.system(command)
+        # os.system(command)
+        process = subprocess.Popen(command.split())
+        process.wait()
         # read results
         sol_pattern = re.compile(r"best-solution   :(( \d+)+)")
         with open(self.out_file, 'r') as f:

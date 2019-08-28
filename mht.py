@@ -8,21 +8,30 @@ import networkx as nx
 
 from utils.mwis import MWIS
 from utils import utils
+from utils.motion_model import motion_model
 
 import pickle
 import matplotlib.pyplot as plt
+
+class Config:
+    w_app = 0
+    w_mot = 0.3
+    w_app_inv = 0
+    w_mot_inv = -0.3
+    w_bbox = 0.7
+    dth = 0.2
+    initScore = 5
+
+CONFIG = Config()
 
 class MHT():
     """Multiply Hypothesis tracking class
     """
 
-    def __init__(self, config, dataLoader, sequence, obj_num=0):
+    def __init__(self, obj_num=0):
         """
         obj_id: start from 0, no bg
         """
-        self.config = config
-        self.dataLoader = dataLoader
-        self.sequence = sequence
         # get object number in this sequence
         self.obj_num = obj_num
         # Trees store all tracks
@@ -35,16 +44,15 @@ class MHT():
         self.mwis = MWIS('track')
         # self.reid = ReidNetwork('best')
         # pre-process
-        self.processData()
         # get all re-id score
-        # if os.path.exists(os.path.join(self.config.debug_path, 're_id', '%s.score'%sequence)):
+        # if os.path.exists(os.path.join(CONFIG.debug_path, 're_id', '%s.score'%sequence)):
         #     print('loading re-id score from disk -------------------')
-        #     with open(os.path.join(self.config.debug_path, 're_id', '%s.score'%sequence),'rb') as f:
+        #     with open(os.path.join(CONFIG.debug_path, 're_id', '%s.score'%sequence),'rb') as f:
         #         self.reid_scores = pickle.load(f)
         # else:
-        #     if not os.path.exists(os.path.join(self.config.debug_path, 're_id')):
-        #         os.makedirs(os.path.join(self.config.debug_path, 're_id'))
-        #     with open(os.path.join(self.config.debug_path, 're_id', '%s.score'%sequence),'wb') as f:
+        #     if not os.path.exists(os.path.join(CONFIG.debug_path, 're_id')):
+        #         os.makedirs(os.path.join(CONFIG.debug_path, 're_id'))
+        #     with open(os.path.join(CONFIG.debug_path, 're_id', '%s.score'%sequence),'wb') as f:
         #         self.reid_scores = self.reidAll()
         #         pickle.dump(self.reid_scores, f)
         # print(self.reid_scores[6])
@@ -56,13 +64,13 @@ class MHT():
     #     """
     #     data = self.dataLoader.content
     #     reid_scores = []
-    #     path, img_list = utils.get_obj_img(self.config, self.sequence)
+    #     path, img_list = utils.get_obj_img(CONFIG, self.sequence)
     #     for detections in range(len(data)):
     #         print('processing frame %d ---------------'%detections)
     #         rois = data[detections]['rois'] # (N,4)
     #         roi_num = rois.shape[0]
     #         scores = np.zeros((roi_num, len(img_list)))
-    #         path_target = os.path.join(self.config.img_dir, self.sequence, '%05d.jpg'%(detections))
+    #         path_target = os.path.join(CONFIG.img_dir, self.sequence, '%05d.jpg'%(detections))
     #         for roiId in range(roi_num):
     #             roi = rois[roiId] # (y1,x1,y2,x2)
     #             bbox = [roi[1], roi[0], roi[3], roi[2]]
@@ -71,16 +79,8 @@ class MHT():
     #         reid_scores.append(scores)
     #     return reid_scores
 
-
-    def processData(self):
-        # cut detections based on its confidence score
-        self.dataLoader.cutWithScore(self.config.minDetScore)
-        self.dataLoader.nms(self.config.ov_threshold)
-
-    def iterTracking(self):
+    def iterTracking(self, data):
         # filter the data with detection score and overlap nms
-        self.processData()
-        data = self.dataLoader.content
         for i in range(len(data)): # len(data)
             print('current processing ------------------- '+str(i))
             # build and update track families
@@ -103,7 +103,7 @@ class MHT():
         # get best results
         results = []
         for obj_id in range(self.obj_num):
-            results.append(self.findBestSolution(obj_id))
+            results.append(self.findBestSolution(data, obj_id))
         return results
 
 
@@ -114,7 +114,7 @@ class MHT():
             appearance score (self.reid_scores)
             motion score (Mahalanobis distance and co-variance)
             scores = {'detection':scores[i], 'current_reid':current_reid, 'inverse_reid':inverse_reid,
-                        'current_motion':current_motion, 'inverse_motion':inverse_motion, 'utils.bbox_iou':utils.bbox_iou}
+                        'current_motion':current_motion, 'inverse_motion':inverse_motion, 'bbox_iou':bbox_iou}
         """
         # TODO: use iou to replace the distance score
         if init:
@@ -122,16 +122,16 @@ class MHT():
             score = math.log(scores['detection'])
         else:
             # update by detection, distance and re-id score
-            w_app = self.config.w_app
-            w_mot = self.config.w_mot
-            w_app_inv = self.config.w_app_inv
-            w_mot_inv = self.config.w_mot_inv
-            w_bbox = self.config.w_bbox
-            # S_app = -1*math.log(0.5+0.5*math.exp(2.0*scores['current_reid'])) - math.log(self.config.c1)
-            # S_app_inv = -1*math.log(0.5+0.5*math.exp(2.0*scores['inverse_reid'])) - math.log(self.config.c1)
+            w_app = CONFIG.w_app
+            w_mot = CONFIG.w_mot
+            w_app_inv = CONFIG.w_app_inv
+            w_mot_inv = CONFIG.w_mot_inv
+            w_bbox = CONFIG.w_bbox
+            # S_app = -1*math.log(0.5+0.5*math.exp(2.0*scores['current_reid'])) - math.log(CONFIG.c1)
+            # S_app_inv = -1*math.log(0.5+0.5*math.exp(2.0*scores['inverse_reid'])) - math.log(CONFIG.c1)
             S_mot = scores['current_motion']
             S_mot_inv = scores['inverse_motion']
-            S_mot_bbox = scores['utils.bbox_iou']
+            S_mot_bbox = scores['bbox_iou']
             score = w_mot*S_mot + w_mot_inv*S_mot_inv + w_bbox*S_mot_bbox
             print('score -----------------------------------------')
             # print('S_app: %f'%S_app)
@@ -186,8 +186,7 @@ class MHT():
         # remove empty tree
         self.trackTrees[treeNo] = [tree for tree in self.trackTrees[treeNo] if tree.nodes!={}]
         
-    def findBestSolution(self, treeNo):
-        data = self.dataLoader.content
+    def findBestSolution(self, data, treeNo):
         paths, results = self.treeToGraph(len(data), treeNo, timeConflict=True)
         path_result = [paths[x] for x in results]
         # combine result in time
@@ -230,14 +229,12 @@ class MHT():
         rois = detections['rois']
         detections_scores = detections['scores']
         class_ids = detections['class_ids']
-        img_path = os.path.join(self.config.img_dir, self.sequence, '%05d.jpg'%t)
-        img_size = cv2.imread(img_path).shape[:2]
         if t == 0:
             # build from ground truth
             for obj_id in range(self.obj_num):
-                bbox = None  # TODO: Find correct bbox
+                bbox = rois[obj_id]
                 # create a root node
-                updated_score = self.config.initScore # self.updateScore(1.0, 0, 0, 0, init=True)
+                updated_score = CONFIG.initScore # self.updateScore(1.0, 0, 0, 0, init=True)
                 tree = Tree()
                 tree.create_node(tag="T_"+str(t)+"_N_"+str(obj_id), identifier="t_"+str(t)+"_n_"+str(obj_id), 
                                     data={'score':updated_score, 'bbox':bbox, 'history_bbox':[bbox]})
@@ -262,7 +259,7 @@ class MHT():
                             #x_bar, P_bar = node.data['kf'].predict()
                             # predict bbox using history
                             # TODO: Find correct bbox
-                            bbox_pred = None  # TODO: Find correct bbox
+                            bbox_pred = motion_model(node.data['history_bbox'], t)
                             nodeObjs.append( {'treeId':treeId, 'node':node.identifier, 'obj_id': obj_id,
                                                 'bbox_pred':bbox_pred, 'bbox':node.data['bbox']} )
                 tempCurrentNode[obj_id] = nodeObjs
@@ -295,7 +292,7 @@ class MHT():
                     # judge the app score of this roi
                     # current_reid = self.reid_scores[t][i,obj_id]
                     # print('re-id score is %f'%current_reid)
-                    # if current_reid >= self.config.appScoreLimit:
+                    # if current_reid >= CONFIG.appScoreLimit:
                         # continue
                     # inverse_reid score is the min value of scores except current obj
                     # other_reids = [self.reid_scores[t][i,x] for x in range(len(self.reid_scores[t][i])) if x != obj_id]
@@ -323,16 +320,16 @@ class MHT():
                         # gating the node:
                         print('distance with last frame number %d is %f'\
                                 %(int(nodeRecord['node'].split('_')[3]),current_motion))
-                        if current_motion > self.config.dth:
+                        if current_motion > CONFIG.dth:
                             # gating success 
                             # get bbox result
-                            utils.bbox_iou = None  # Todo: find bbox iou
+                            bbox_iou = utils.calc_bbox_iou(nodeRecord['bbox'], bbox)
                             # if no bbox iou, skip
-                            if utils.bbox_iou == 0:
+                            if bbox_iou == 0:
                                 continue
                             # get all the score we need for a new roi and target leaves
                             scores = {'detection':detections_scores[i],
-                                        'current_motion':current_motion, 'inverse_motion':inverse_motion, 'utils.bbox_iou':utils.bbox_iou}
+                                        'current_motion':current_motion, 'inverse_motion':inverse_motion, 'bbox_iou':bbox_iou}
                             print(scores)
                             node_score = self.updateScore(scores)
                             current_score = self.trackTrees[obj_id][nodeRecord['treeId']]\
@@ -375,3 +372,12 @@ class MHT():
         """
         bbox_iou = utils.calc_bbox_iou(curr_bbox, bbox)
         return bbox_iou
+    
+    def update(self, out_boxes, out_scores, out_classes):
+        data = [{
+            'rois': out_boxes[i],
+            'scores': out_scores[i],
+            'class_ids': out_classes[i],
+        } for i in range(len(out_scores))]
+        self.iterTracking(data)
+
